@@ -54,7 +54,10 @@ class DPIns(AgentCore):
         # Concatenate conversations
         conversation_history = ""
         for msg in history_messages:
-            conversation_history = f"{conversation_history}\n[{msg.agent_name}]: {msg.content}"
+            if msg.tone and msg.face:
+                conversation_history = f"{conversation_history}\n[{msg.agent_name}] (Tone: {msg.tone}, Face: {msg.face}): {msg.content}"
+            else:
+                conversation_history = f"{conversation_history}\n[{msg.agent_name}]: {msg.content}"
         
         # Instructions for different phases
         if "Night" in current_phase:
@@ -107,6 +110,7 @@ Based on the game rules, role descriptions, messages and your belief, think abou
         while retries < MAX_RETRIES:
             try:
                 current_belief = ""
+                role_guesses = {}
                 chosen_strategy, speaking_strategy = "", ""
                 if "Night" in current_phase:
                     action_prompt = self.role.get_night_prompt()
@@ -163,7 +167,6 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                                                                               current_belief=current_belief), 
                                               request_msg=action_prompt)
                 # print("Chosen Action: ", response)
-                
                 action_list = extract_jsons(response)
                 if len(action_list) < 1:
                     raise ValueError(f"Player output {response} is not a valid json.")

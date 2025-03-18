@@ -41,6 +41,8 @@ class Message:
     belief: str = ""
     strategy: str = ""
     thought: str = ""
+    tone: str = ""
+    face: str = ""
     timestamp: int = time.time_ns()
     visible_to: Union[str, List[str]] = 'all'
     msg_type: str = "text"

@@ -45,7 +45,9 @@ Remember, do not repeat statements after other players. And you should be cautio
 You must return your response in a JSON format that can be parsed by Python `json.loads`. Here is the Response Format:
 {
     "thought": <the insights you summarized from the conversation and your speaking strategy>,
-    "speech": <your public speech content, should less than 50 words>
+    "speech": <your public speech content, should less than 50 words>,
+    "tone": <choose one from: sad, anger, neutral, happy, surprise, fear, disgust, other>,
+    "face": <choose one from: sad, anger, neutral, happy, surprise, fear, disgust, other>
 }
 """
         return speech_prompt
