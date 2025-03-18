@@ -70,7 +70,13 @@ Give your step-by-step thought process and your derived concise result (no more 
 ```
 My step-by-step thought process: ...
 My concise result: ...
+Role guesses:
+player1 -> role
+player2 -> role 
+player3 -> role
+...
 ```
+Note: If you cannot determine a player's role with confidence, you can use "unknown" as their role.
 """
         return belief_prompt
     

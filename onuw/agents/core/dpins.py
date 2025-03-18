@@ -116,6 +116,13 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                                                         prompts=self._construct_prompts(current_phase="Belief Modeling", 
                                                                                         history_messages=observation["message_history"]), 
                                                         request_msg=belief_prompt)
+
+                    current_belief, role_guesses = current_belief.split('Role guesses:', 1)
+                    current_belief = current_belief.strip()
+                    role_guesses = {line.split('->', 1)[0].strip(): line.split('->', 1)[1].strip() 
+
+                for line in role_guesses.strip().split('\n')}
+
                     # print("Current Belief: ", current_belief)
                     if "Day" in current_phase:
                         if self.structure == "dpins:llm":
@@ -163,6 +170,7 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 action = action_list[0]
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
+                action["guesses"] = role_guesses
 
                 break  # if success, break the loop
             
