@@ -11,6 +11,7 @@ except ImportError:
     is_openai_available = False
 else:
     openai.api_key = os.environ.get("OPENAI_API_KEY")
+    openai.base_url = os.environ.get("OPENAI_API_BASE")
     if openai.api_key is None:
         is_openai_available = False
     else:
@@ -18,7 +19,7 @@ else:
 
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_TOKENS = 256
-DEFAULT_MODEL = "gpt-4-1106-preview"  # "gpt-3.5-turbo-1106"
+DEFAULT_MODEL = "Qwen2.5-14B-Instruct"  # "gpt-3.5-turbo-1106"
 
 END_OF_MESSAGE = "<EOS>"  # End of message token specified by us not OpenAI
 STOP = ("<|endoftext|>", END_OF_MESSAGE)  # End of sentence token
@@ -70,7 +71,7 @@ class OpenAIChat(IntelligenceBackend):
                 max_tokens=self.max_tokens,
                 stop=STOP
             )
-        
+
         response = completion.choices[0]['message']
         return response
     
