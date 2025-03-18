@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Dict
 from dataclasses import dataclass
 import time
 import hashlib
@@ -43,6 +43,8 @@ class Message:
     thought: str = ""
     tone: str = ""
     face: str = ""
+    guesses: Dict[str, str] = None
+    sp_actions: List[List[str]] = None
     timestamp: int = time.time_ns()
     visible_to: Union[str, List[str]] = 'all'
     msg_type: str = "text"

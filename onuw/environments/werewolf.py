@@ -250,7 +250,7 @@ class Werewolf(Environment):
     
     def day_step(self, player_name: str, action: Dict) -> TimeStep:
         message = Message(agent_name=player_name, content=action.get("speech", ""), belief=action.get("belief", ""), 
-                          strategy=action.get("strategy", ""), thought=action.get("thought", ""), tone=action.get("tone", ""), face=action.get("face", ""), turn=self._current_turn)
+                          strategy=action.get("strategy", ""), thought=action.get("thought", ""), tone=action.get("tone", ""), face=action.get("face", ""), guesses=action.get("guesses", None), sp_actions=action.get("sp_actions", None), turn=self._current_turn)
         self.message_pool.append_message(message)
         self._current_turn += 1
 

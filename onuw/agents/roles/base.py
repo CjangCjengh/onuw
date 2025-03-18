@@ -114,3 +114,39 @@ You must return your response in a JSON format that can be parsed by Python `jso
             style=Style.from_dict({'info': "red bold", 'choices': "orange bold", 'user_prompt': 'ansicyan underline'})
         )
         return {"thought": "", "player": vote}
+    
+    def get_parse_prompt(self, speech: str):
+        system_prompt = """You are a dialogue action parser for a Werewolf game. Your task is to extract structured actions from player dialogues.
+
+Each action should be formatted as a triple: subject | predicate | object
+
+Valid subjects: player1, player2, player3, player4, player5
+Valid predicates: 
+- point_as_werewolf
+- point_as_villager
+- point_as_seer
+- point_as_troublemaker
+- point_as_robber
+- point_as_insomniac
+- support
+- oppose
+Valid objects: player1, player2, player3, player4, player5
+
+Extract ALL possible actions from the dialogue. If a player refers to themselves, use their player number.
+Format each action on a separate line with following response format:
+```
+subject | predicate | object
+...
+```
+
+Example:
+Input:
+player1: I am a villager. I think player3's statement makes sense, but player2 is definitely a werewolf.
+Output:
+```
+player1 | point_as_villager | player1
+player1 | support | player3
+player1 | point_as_werewolf | player2
+```"""
+        user_prompt = f"Extract all actions from the following player dialogue:\n{self.name}: {speech}"""
+        return {"system_prompt": system_prompt, "user_prompt": user_prompt}

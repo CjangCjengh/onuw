@@ -7,6 +7,7 @@ import time
 import d3rlpy
 import numpy as np
 import random
+import re
 
 from .base import AgentCore
 from ..roles import BaseRole, SPEAKING_STRATEGY
@@ -122,10 +123,8 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                                                         request_msg=belief_prompt)
 
                     current_belief, role_guesses = current_belief.split('Role guesses:', 1)
-                    current_belief = current_belief.strip()
-                    role_guesses = {line.split('->', 1)[0].strip(): line.split('->', 1)[1].strip() 
-
-                for line in role_guesses.strip().split('\n')}
+                    current_belief = current_belief.replace('```', '').strip()
+                    role_guesses = {player: role for player, role in re.findall(r'(\S+)\s*->\s*(\S+)', role_guesses)}
 
                     # print("Current Belief: ", current_belief)
                     if "Day" in current_phase:
@@ -167,6 +166,7 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                                                                               current_belief=current_belief), 
                                               request_msg=action_prompt)
                 # print("Chosen Action: ", response)
+
                 action_list = extract_jsons(response)
                 if len(action_list) < 1:
                     raise ValueError(f"Player output {response} is not a valid json.")
@@ -174,6 +174,11 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
                 action["guesses"] = role_guesses
+                if 'speech' in action:
+                    response = self.backend.query(agent_name=self.name, 
+                                              prompts=self.role.get_parse_prompt(action["speech"]))
+                    sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
+                    action["sp_actions"] = sp_actions
 
                 break  # if success, break the loop
             

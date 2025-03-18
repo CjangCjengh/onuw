@@ -170,13 +170,17 @@ class Arena:
         message_rows = []
 
         if path.endswith(".csv"):
-            header = ["agent_name", "belief", "strategy", "content", "thought", "turn", "timestamp", "visible_to", "msg_type"]
+            header = ["agent_name", "belief", "strategy", "content", "face", "tone", "guesses", "sp_actions", "thought", "turn", "timestamp", "visible_to", "msg_type"]
             for message in messages:
                 message_row = [
                     message.agent_name,
                     message.belief,
                     message.strategy,
                     message.content,
+                    message.face,
+                    message.tone,
+                    message.guesses,
+                    message.sp_actions,
                     message.thought,
                     message.turn,
                     str(message.timestamp),
@@ -196,6 +200,10 @@ class Arena:
                     "belief": message.belief,
                     "strategy": message.strategy,
                     "content": message.content,
+                    "face": message.face,
+                    "tone": message.tone,
+                    "guesses": message.guesses,
+                    "sp_actions": message.sp_actions,
                     "thought": message.thought,
                     "turn": message.turn,
                     "timestamp": str(message.timestamp),
