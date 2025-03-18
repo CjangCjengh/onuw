@@ -94,7 +94,7 @@ Based on the game rules, role descriptions, messages and your belief, think abou
         
         return {"system_prompt": system_prompt, "user_prompt": user_prompt}
 
-    def act(self, observation: Dict):
+    def act(self, observation: Dict, players=None, environment=None):
         """
         Take an action based on the observation (Generate a response), which can later be parsed to actual actions that affect the game dyanmics.
 
@@ -111,7 +111,6 @@ Based on the game rules, role descriptions, messages and your belief, think abou
         while retries < MAX_RETRIES:
             try:
                 current_belief = ""
-                role_guesses = {}
                 chosen_strategy, speaking_strategy = "", ""
                 if "Night" in current_phase:
                     action_prompt = self.role.get_night_prompt()
@@ -173,12 +172,24 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 action = action_list[0]
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
-                action["guesses"] = role_guesses
                 if 'speech' in action:
                     response = self.backend.query(agent_name=self.name, 
                                               prompts=self.role.get_parse_prompt(action["speech"]))
                     sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
                     action["sp_actions"] = sp_actions
+                    action["guesses"] = {self.name: role_guesses}
+                    for player in players:
+                        if player.role.name == self.name:
+                            continue
+                        current_observation = environment.get_observation(player.role.name, only_message=False)
+                        belief_prompt = player.role.get_belief_prompt()
+                        current_belief = self.backend.query(agent_name=player.role.name, 
+                                                            prompts=self._construct_prompts(current_phase="Belief Modeling", 
+                                                                                            history_messages=current_observation["message_history"]), 
+                                                            request_msg=belief_prompt)
+                        _, role_guesses = current_belief.split('Role guesses:', 1)
+                        role_guesses = {player: role for player, role in re.findall(r'(\S+)\s*->\s*(\S+)', role_guesses)}
+                        action["guesses"][player.role.name] = role_guesses
 
                 break  # if success, break the loop
             

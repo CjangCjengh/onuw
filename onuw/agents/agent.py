@@ -90,7 +90,7 @@ class Player(Agent):
             global_prompt=self.global_prompt,
         )
 
-    def act(self, observation: Dict) -> str:
+    def act(self, observation: Dict, players=None, environment=None) -> str:
         """
         Take an action based on the observation (Generate a response), which can later be parsed to actual actions that affect the game dyanmics.
 
@@ -100,11 +100,11 @@ class Player(Agent):
         Returns:
             str: The action (response) of the player.
         """
-        action = self.core.act(observation)  
+        action = self.core.act(observation, players, environment)  
         return action
 
-    def __call__(self, observation: Dict) -> str:
-        return self.act(observation)
+    def __call__(self, observation: Dict, players=None, environment=None) -> str:
+        return self.act(observation, players, environment)
 
     def reset(self):
         """

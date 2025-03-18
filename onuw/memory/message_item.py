@@ -43,7 +43,7 @@ class Message:
     thought: str = ""
     tone: str = ""
     face: str = ""
-    guesses: Dict[str, str] = None
+    guesses: Dict[str, Dict[str, str]] = None
     sp_actions: List[List[str]] = None
     timestamp: int = time.time_ns()
     visible_to: Union[str, List[str]] = 'all'
