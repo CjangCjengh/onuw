@@ -115,7 +115,15 @@ You must return your response in a JSON format that can be parsed by Python `jso
             [('class:user_prompt', "Type your speech content: ")],
             style=Style.from_dict({'user_prompt': 'ansicyan underline'})
         )
-        return {"thought": "", "speech": speech}
+        face = prompt(
+            [('class:user_prompt', "Choose your facial expression (sad，anger，neutral，happy，surprise，fear，disgust，other): ")],
+            style=Style.from_dict({'user_prompt': 'ansicyan underline'})
+        )
+        tone = prompt(
+            [('class:user_prompt', "Choose your tone (sad，anger，neutral，happy，surprise，fear，disgust，other): ")],
+            style=Style.from_dict({'user_prompt': 'ansicyan underline'})
+        )
+        return {"thought": "", "speech": speech, "face": face, "tone": tone}
     
     def get_voting_input(self):
         vote = prompt(
