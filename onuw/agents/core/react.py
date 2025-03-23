@@ -3,6 +3,7 @@ from tenacity import RetryError
 import logging
 import uuid
 import time
+import re
 
 from .base import AgentCore
 from ..roles import BaseRole
@@ -90,6 +91,11 @@ Based on the game rules, role descriptions and messages, think about who is on y
                 action = action_list[0]
                 action["belief"] = ""
                 action["strategy"] = ""
+                if 'speech' in action:
+                    response = self.backend.query(agent_name=self.name, 
+                                              prompts=self.role.get_parse_prompt(action["speech"]))
+                    sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
+                    action["sp_actions"] = sp_actions
 
                 break  # if success, break the loop
             

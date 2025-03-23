@@ -4,21 +4,37 @@ import logging
 import uuid
 from fuzzywuzzy import process
 import time
-import d3rlpy
 import numpy as np
 import random
 import re
+import torch
 
 from .base import AgentCore
 from ..roles import BaseRole, SPEAKING_STRATEGY
 from ...backends import IntelligenceBackend
 from ...utils import extract_jsons, get_embeddings
+from ...belief_model import WerewolfBeliefModel, WerewolfBeliefModelConfig
 
 # A special signal sent by the player to indicate that it is not possible to continue the conversation, and it requests to end the conversation.
 # It contains a random UUID string to avoid being exploited by any of the players.
 SIGNAL_END_OF_CONVERSATION = f"<<<<<<END_OF_CONVERSATION>>>>>>{uuid.uuid4()}"
 # The maximum number of retries when the query of backend fails
 MAX_RETRIES = 5
+
+player_names = ['player1', 'player2', 'player3', 'player4', 'player5']
+player_to_id = {'player1': 0, 'player2': 1, 'player3': 2, 'player4': 3, 'player5': 4}
+face_to_id = {'sad': 0, 'anger': 1, 'neutral': 2, 'happy': 3, 'surprise': 4, 'fear': 5, 'disgust': 6, 'other': 7}
+tone_to_id = {'sad': 0, 'anger': 1, 'neutral': 2, 'happy': 3, 'surprise': 4, 'fear': 5, 'disgust': 6, 'other': 7}
+action_to_id = {
+    'point_as_werewolf': 0,
+    'point_as_villager': 1,
+    'point_as_seer': 2,
+    'point_as_troublemaker': 3,
+    'point_as_robber': 4,
+    'point_as_insomniac': 5,
+    'support': 6,
+    'oppose': 7
+}
 
 
 def choosing_speaking_strategy(policy, messages, belief):
@@ -33,6 +49,58 @@ def choosing_speaking_strategy(policy, messages, belief):
     action = policy.predict(np.expand_dims(obs_vec, axis=0))
     return action.squeeze()
 
+def clean_text(text):
+    return re.sub(r'\s', '', text).lower()
+
+def parse_sp_actions(messages):
+    subject_ids = []
+    action_ids = []
+    object_ids = []
+    face_ids = []
+    tone_ids = []
+
+    for log_item in messages:
+        sp_actions = log_item.sp_actions
+        if sp_actions is None:
+            continue
+
+        face = clean_text(log_item.face)
+        face_id = face_to_id.get(face, 7)
+        tone = clean_text(log_item.tone)
+        tone_id = tone_to_id.get(tone, 7)
+
+        for subject, action, object in sp_actions:
+            subject = clean_text(subject)
+            action = clean_text(action)
+            object = clean_text(object)
+            if subject not in player_to_id or \
+                object not in player_to_id or \
+                action not in action_to_id:
+                continue
+            subject_ids.append(player_to_id[subject])
+            object_ids.append(player_to_id[object])
+            action_ids.append(action_to_id[action])
+            face_ids.append(face_id)
+            tone_ids.append(tone_id)
+
+    data_item = {
+        'subject_ids': torch.tensor(subject_ids, dtype=torch.long),
+        'action_ids': torch.tensor(action_ids, dtype=torch.long),
+        'object_ids': torch.tensor(object_ids, dtype=torch.long),
+        'face_ids': torch.tensor(face_ids, dtype=torch.long),
+        'tone_ids': torch.tensor(tone_ids, dtype=torch.long)
+    }
+
+    return data_item
+
+def mcts_speaking_strategy(tom_model, messages):
+    history_tokens = parse_sp_actions(messages)
+    sp_actions = []
+    if len(history_tokens['subject_ids']) == 0:
+        return sp_actions
+
+    return sp_actions
+
 
 class DPIns(AgentCore):
     """
@@ -42,8 +110,7 @@ class DPIns(AgentCore):
         super().__init__(role=role, backend=backend, global_prompt=global_prompt, **kwargs)
         
         self.structure = kwargs.get("structure", "")
-        if self.structure == "dpins:rl":
-            self.policy = d3rlpy.load_learnable("onuw/agents/models/discussion_policy.d3")
+        self.tom_model = WerewolfBeliefModel.from_pretrained("onuw/agents/models/belief_model")
     
     def _construct_prompts(self, current_phase, history_messages, **kwargs):
         # Merge the role description and the global prompt as the system prompt for the agent
@@ -126,6 +193,11 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                         action_prompt = self.role.get_day_prompt(speaking_strategy)
                     else:
                         action_prompt = self.role.get_voting_prompt()
+
+                # MCTS
+                sp_actions = mcts_speaking_strategy(self.tom_model, observation["message_history"])
+                if len(sp_actions) > 0:
+                    current_belief += '\nTo reduce others\' suspicion of me, I should xxxx.'
                 
                 response = self.backend.query(agent_name=self.name, 
                                               prompts=self._construct_prompts(current_phase=current_phase, 
@@ -140,11 +212,7 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 action = action_list[0]
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
-                if 'speech' in action:
-                    response = self.backend.query(agent_name=self.name, 
-                                              prompts=self.role.get_parse_prompt(action["speech"]))
-                    sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
-                    action["sp_actions"] = sp_actions
+                action["sp_actions"] = sp_actions
 
                 break  # if success, break the loop
             

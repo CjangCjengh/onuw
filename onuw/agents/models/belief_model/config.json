@@ -1,0 +1,17 @@
+{
+  "action_types": 9,
+  "architectures": [
+    "WerewolfBeliefModel"
+  ],
+  "d_model": 512,
+  "dropout": 0.1,
+  "face_types": 8,
+  "max_seq_length": 256,
+  "model_type": "werewolf_belief",
+  "n_head": 8,
+  "n_layer": 8,
+  "num_players": 5,
+  "tone_types": 8,
+  "torch_dtype": "float32",
+  "transformers_version": "4.50.0.dev0"
+}

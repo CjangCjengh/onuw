@@ -1,5 +1,6 @@
 from typing import Dict
 from rich.console import Console
+import re
 
 from .base import AgentCore
 from ..roles import BaseRole
@@ -38,4 +39,10 @@ class Human(AgentCore):
         
         action = {"belief": "", "strategy": ""}
         action.update(response)
+        if 'speech' in action:
+            response = self.backend.query(agent_name=self.name, 
+                                        prompts=self.role.get_parse_prompt(action["speech"]))
+            sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
+            action["sp_actions"] = sp_actions
+
         return action

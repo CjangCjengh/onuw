@@ -7,6 +7,7 @@ import time
 import d3rlpy
 import numpy as np
 import random
+import re
 
 from .base import AgentCore
 from ..roles import BaseRole, SPEAKING_STRATEGY
@@ -163,6 +164,11 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 action = action_list[0]
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
+                if 'speech' in action:
+                    response = self.backend.query(agent_name=self.name, 
+                                              prompts=self.role.get_parse_prompt(action["speech"]))
+                    sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
+                    action["sp_actions"] = sp_actions
 
                 break  # if success, break the loop
             
