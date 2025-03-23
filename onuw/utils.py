@@ -11,8 +11,9 @@ try:
 except ImportError:
     is_openai_available = False
 else:
-    openai.api_key = os.environ.get("OPENAI_API_KEY")
-    if openai.api_key is None:
+    api_key_emb = os.environ.get("OPENAI_API_KEY_EMB")
+    base_url_emb = os.environ.get("OPENAI_API_BASE_EMB")
+    if api_key_emb is None:
         is_openai_available = False
     else:
         is_openai_available = True
@@ -47,10 +48,16 @@ def get_embeddings(content, backend="gemini"):
         )
         embedding = result["embedding"]
     elif backend == "openai":
+        api_key_ori = openai.api_key
+        base_url_ori = openai.api_base
+        openai.api_key = api_key_emb
+        openai.api_base = base_url_emb
         result = openai.Embedding.create(
             input=content,
             model=BACKEND_MODEL[backend]
         )
+        openai.api_key = api_key_ori
+        openai.api_base = base_url_ori
         embedding = result.data[0].embedding
     else:
         embedding = []

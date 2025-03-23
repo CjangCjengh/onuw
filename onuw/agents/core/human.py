@@ -12,7 +12,7 @@ class Human(AgentCore):
 
         self.console = Console()
     
-    def act(self, observation: Dict):
+    def act(self, observation: Dict, players=None, environment=None):
         """
         Take an action based on the observation (Generate a response), which can later be parsed to actual actions that affect the game dyanmics.
 

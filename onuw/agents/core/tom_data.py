@@ -7,6 +7,7 @@ import time
 import d3rlpy
 import numpy as np
 import random
+import re
 
 from .base import AgentCore
 from ..roles import BaseRole, SPEAKING_STRATEGY
@@ -41,8 +42,6 @@ class DPIns(AgentCore):
         super().__init__(role=role, backend=backend, global_prompt=global_prompt, **kwargs)
         
         self.structure = kwargs.get("structure", "")
-        if self.structure == "dpins:rl":
-            self.policy = d3rlpy.load_learnable("onuw/agents/models/discussion_policy.d3")
     
     def _construct_prompts(self, current_phase, history_messages, **kwargs):
         # Merge the role description and the global prompt as the system prompt for the agent
@@ -54,7 +53,10 @@ class DPIns(AgentCore):
         # Concatenate conversations
         conversation_history = ""
         for msg in history_messages:
-            conversation_history = f"{conversation_history}\n[{msg.agent_name}]: {msg.content}"
+            if msg.tone and msg.face:
+                conversation_history = f"{conversation_history}\n[{msg.agent_name}] (Tone: {msg.tone}, Face: {msg.face}): {msg.content}"
+            else:
+                conversation_history = f"{conversation_history}\n[{msg.agent_name}]: {msg.content}"
         
         # Instructions for different phases
         if "Night" in current_phase:
@@ -111,41 +113,18 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 if "Night" in current_phase:
                     action_prompt = self.role.get_night_prompt()
                 else:
-                    belief_prompt = self.role.get_belief_prompt()
+                    belief_prompt = self.role.get_belief_prompt_role()
                     current_belief = self.backend.query(agent_name=self.name, 
                                                         prompts=self._construct_prompts(current_phase="Belief Modeling", 
                                                                                         history_messages=observation["message_history"]), 
                                                         request_msg=belief_prompt)
+
+                    current_belief, role_guesses = current_belief.split('Role guesses:', 1)
+                    current_belief = current_belief.replace('```', '').strip()
+                    role_guesses = {player: role for player, role in re.findall(r'(\S+)\s*->\s*(\S+)', role_guesses)}
+
                     # print("Current Belief: ", current_belief)
                     if "Day" in current_phase:
-                        if self.structure == "dpins:llm":
-                            # Choose speaking strategy by LLM
-                            choose_prompt = self.role.get_strategy_prompt()
-                            chosen_result = self.backend.query(agent_name=self.name,
-                                                               prompts=self._construct_prompts(current_phase="Speaking Strategy",
-                                                                                               history_messages=observation["message_history"],
-                                                                                               current_belief=current_belief),
-                                                               request_msg=choose_prompt)
-                            # print("Chosen Speaking Strategy: ", chosen_result)
-                            
-                            json_list = extract_jsons(chosen_result)
-                            if len(json_list) < 1:
-                                raise ValueError(f"Player output {chosen_result} is not a valid json.")
-                            chosen_strategy = json_list[0].get("strategy", "")
-                            
-                            # find the best match speaking strategy
-                            chosen_strategy, _ = process.extractOne(chosen_strategy, SPEAKING_STRATEGY.keys())
-                            speaking_strategy = SPEAKING_STRATEGY.get(chosen_strategy, "")
-
-                        elif self.structure == "dpins:rl":
-                            chosen_strategy_idx = choosing_speaking_strategy(self.policy, observation["message_history"], current_belief)
-                            chosen_strategy = list(SPEAKING_STRATEGY.keys())[chosen_strategy_idx]
-                            speaking_strategy = SPEAKING_STRATEGY.get(chosen_strategy, "")
-                        
-                        elif self.structure == "dpins:random":
-                            chosen_strategy = random.choice(list(SPEAKING_STRATEGY.keys()))
-                            speaking_strategy = SPEAKING_STRATEGY.get(chosen_strategy, "")
-                        
                         action_prompt = self.role.get_day_prompt(speaking_strategy)
                     else:
                         action_prompt = self.role.get_voting_prompt()
@@ -156,13 +135,31 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                                                                               current_belief=current_belief), 
                                               request_msg=action_prompt)
                 # print("Chosen Action: ", response)
-                
+
                 action_list = extract_jsons(response)
                 if len(action_list) < 1:
                     raise ValueError(f"Player output {response} is not a valid json.")
                 action = action_list[0]
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
+                if 'speech' in action:
+                    response = self.backend.query(agent_name=self.name, 
+                                              prompts=self.role.get_parse_prompt(action["speech"]))
+                    sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
+                    action["sp_actions"] = sp_actions
+                    action["guesses"] = {self.name: role_guesses}
+                    for player in players:
+                        if player.role.name == self.name:
+                            continue
+                        current_observation = environment.get_observation(player.role.name, only_message=False)
+                        belief_prompt = player.role.get_belief_prompt_role()
+                        current_belief = self.backend.query(agent_name=player.role.name, 
+                                                            prompts=self._construct_prompts(current_phase="Belief Modeling", 
+                                                                                            history_messages=current_observation["message_history"]), 
+                                                            request_msg=belief_prompt)
+                        _, role_guesses = current_belief.split('Role guesses:', 1)
+                        role_guesses = {player: role for player, role in re.findall(r'(\S+)\s*->\s*(\S+)', role_guesses)}
+                        action["guesses"][player.role.name] = role_guesses
 
                 break  # if success, break the loop
             

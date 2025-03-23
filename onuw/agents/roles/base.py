@@ -72,6 +72,18 @@ Give your step-by-step thought process and your derived concise result (no more 
 ```
 My step-by-step thought process: ...
 My concise result: ...
+```
+"""
+        return belief_prompt
+    
+    def get_belief_prompt_role(self):
+        belief_prompt = f"""Now it is your turn, {self.name}.
+Please analyze current situation and think about what roles yourself ({self.name}) and other players ({', '.join(self.current_players)}) can most probably be now. You can reason each player's role step by step, based on the real or highly credible information you know.
+Remember, you must give out the most likely role of each player (including yourself) in your concise response. And the number of each role have to be less or equal to the number of it in the candidate roles.
+Give your step-by-step thought process and your derived concise result (no more that 2 sentences) at the end with following Response Format:
+```
+My step-by-step thought process: ...
+My concise result: ...
 Role guesses:
 player1 -> role
 player2 -> role 
