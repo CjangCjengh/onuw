@@ -6,6 +6,7 @@ from fuzzywuzzy import process
 import time
 import numpy as np
 import random
+import math
 import re
 import torch
 
@@ -14,6 +15,8 @@ from ..roles import BaseRole, SPEAKING_STRATEGY
 from ...backends import IntelligenceBackend
 from ...utils import extract_jsons, get_embeddings
 from ...belief_model import WerewolfBeliefModel, WerewolfBeliefModelConfig
+
+import pdb
 
 # A special signal sent by the player to indicate that it is not possible to continue the conversation, and it requests to end the conversation.
 # It contains a random UUID string to avoid being exploited by any of the players.
@@ -35,6 +38,22 @@ action_to_id = {
     'support': 6,
     'oppose': 7
 }
+
+
+id2player = {'0': 'player1', '1': 'player2' , '2': 'player3', '3': 'player4', '4': 'player5'}
+id2face = {'0':'sad', '1':'anger', '2':'neutral', '3':'happy', '4':'surprise', '5':'fear', '6':'disgust', '7':'other'}
+id2tone = {'0':'sad', '1':'anger', '2':'neutral', '3':'happy', '4':'surprise', '5':'fear', '6':'disgust', '7':'other'}
+id2action = {
+    '0':'point_as_werewolf',
+    '1':'point_as_villager',
+    '2':'point_as_seer',
+    '3':'point_as_troublemaker',
+    '4':'point_as_robber',
+    '5':'point_as_insomniac',
+    '6':'support',
+    '7':'oppose'
+}
+
 
 
 def choosing_speaking_strategy(policy, messages, belief):
@@ -93,11 +112,147 @@ def parse_sp_actions(messages):
 
     return data_item
 
-def mcts_speaking_strategy(tom_model, messages):
+
+
+class Node:
+    def __init__(self, state, parent=None):
+        self.state = state
+        self.parent = parent
+        self.children = []
+
+        self.rewards = -100  
+        self.visits = 1
+
+    def select_child(self): 
+        assert self.visits > 0
+        ucb = lambda c:(c.rewards / c.visits) + math.sqrt(2*math.log(self.visits) / c.visits) if c.visits > 0 else float('inf')
+        return max(self.children, key=ucb)
+
+    def expand(self):
+        next_state = self.get_a_legal_state()     
+        child_node = Node(next_state, self)  
+        self.children.append(child_node)
+        return child_node
+
+    def update(self, r): 
+        self.visits += 1
+        self.rewards += r 
+
+        # bachprop visit
+        tmp = self.parent
+        while tmp:
+            tmp.visits += 1
+            tmp = tmp.parent
+
+    def get_a_legal_state(self):
+        new_state = {}
+        for key in self.state.keys():
+            if key == "subject_ids":
+                if self.parent is not None:
+                    ps = self.parent.state[key][-1]
+                else:
+                    ps = self.state[key][-1]
+                ne = torch.tensor([ps], dtype=torch.long)
+            elif key == "object_ids":
+                ne = torch.tensor([random.randrange(0, 5)], dtype=torch.long)
+            else:
+                ne = torch.tensor([random.randrange(0, 8)], dtype=torch.long)
+            new_state[key] = torch.cat((self.state[key], ne))
+        return new_state
+
+
+class MCTS:
+    def __init__(self, 
+                 tom_model, 
+                 player_id, 
+                 exploration_weight=0.9, 
+                 search_iterations=500,
+                 sim_depth=3,
+                 ):
+        self.exploration_weight = exploration_weight 
+        self.search_iterations = search_iterations
+        self.sim_depth = sim_depth
+        
+        self.tom_model = tom_model
+        self.player_idx = player_id - 1
+        assert self.player_idx >= 0 and self.player_idx < self.tom_model.config.num_players
+        
+
+    def search(self, initial_state):
+        root = Node(initial_state)
+
+        for _ in range(self.search_iterations):
+            node = root
+            tmp = random.random()
+            if tmp >= self.exploration_weight and root.children != []:  
+                node = node.select_child()
+
+            self.simulate(node)
+        
+        best_ch = max(root.children, key=lambda c: c.rewards)
+        tmp = best_ch
+        while tmp.children != []:
+            tmp = max(tmp.children, key=lambda c: c.rewards)
+            if tmp.rewards > best_ch.rewards:
+                best_ch = tmp
+                
+        return best_ch.state
+
+
+    def simulate(self, node):  # simulate and backprob
+        reward = self.cal_reward(node)
+        node.update(reward)
+
+        sd = 0
+        print(f'Search Depth: {sd}')
+        print("=" * 5)
+        print('Node State:')
+        print(node.state)
+        print(f'Reward: {reward}')
+
+        for _ in range(self.sim_depth):  
+            next_node = node.expand()
+            node = next_node
+            node.update(reward)
+
+            sd += 1
+            print(f'Search Depth: {sd}')
+            print("=" * 5)
+            print('Node State:')
+            print(node.state)
+            print(f'Reward: {reward}')
+
+
+    def cal_reward(self, node):
+        resu = self.tom_model(subject_ids=node.state["subject_ids"].unsqueeze(0),  
+                        action_ids=node.state["action_ids"].unsqueeze(0),
+                        object_ids=node.state["object_ids"].unsqueeze(0),  
+                        tone_ids=node.state["tone_ids"].unsqueeze(0),
+                        face_ids=node.state["face_ids"].unsqueeze(0),
+                        )
+        belief_mat = resu["belief_matrix"][0, -1, :, :] 
+        reward = -1 * sum(belief_mat[i][self.player_idx] for i in range(len(belief_mat)) if i != self.player_idx)
+        return reward
+        
+
+        
+def mcts_speaking_strategy(tom_model, player_id, messages):
     history_tokens = parse_sp_actions(messages)
     sp_actions = []
     if len(history_tokens['subject_ids']) == 0:
         return sp_actions
+
+    mcts = MCTS(tom_model, int(player_id), exploration_weight=0.01, search_iterations=10, sim_depth=3)  
+    new_state = mcts.search(history_tokens)
+
+    print('Histokens:')
+    print(history_tokens)
+    print('Searched:')
+    print(new_state)
+    pdb.set_trace()
+
+    # TODO: convert new_state into sp_actions
+    
 
     return sp_actions
 
@@ -195,8 +350,9 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                         action_prompt = self.role.get_voting_prompt()
 
                 # MCTS
-                sp_actions = mcts_speaking_strategy(self.tom_model, observation["message_history"])
+                sp_actions = mcts_speaking_strategy(self.tom_model, self.role.name[-1], observation["message_history"])
                 if len(sp_actions) > 0:
+                    # TODO
                     current_belief += '\nTo reduce others\' suspicion of me, I should xxxx.'
                 
                 response = self.backend.query(agent_name=self.name, 
