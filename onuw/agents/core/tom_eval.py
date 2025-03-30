@@ -113,6 +113,34 @@ def parse_sp_actions(messages):
     return data_item
 
 
+def form_action_sentence(obj, action, face, tone, backend):
+    hint = "Given the following sentence elements, use all of them to construct a complete short sentence. \
+        For example, ```Subject: myself, Object: player 3, Action: point_as_troublemaker, Tone: anger, Expression: happy``` \
+        Output: ```I happily pointed at player 3 as the troublemaker, masking my anger.``` \
+        Here are the sentence elements: ```{atoms}```"
+    
+    atoms = f"Subject: myself, Object: {obj}, Action: {action}, Tone: {tone}, Expression: {face}"
+    rqm = hint.format(atoms=atoms)
+
+    return backend.query(agent_name="p", prompts={"system_prompt": "", "user_prompt": ""},
+                  request_msg=rqm)
+    
+
+def sp_actions_2_belief_prompt(sp_actions, backend):
+    assert sp_actions != None
+
+    prompt = ""
+    for i in range(len(sp_actions["subject_ids"])):
+        sen = form_action_sentence(id2player[str(sp_actions["object_ids"][i].item())],
+                                   id2action[str(sp_actions["action_ids"][i].item())],
+                                   id2face[str(sp_actions["face_ids"][i].item())],
+                                   id2tone[str(sp_actions["tone_ids"][i].item())],
+                                   backend
+                                   )
+        prompt += ("\n - " + sen)
+
+    return prompt
+
 
 class Node:
     def __init__(self, state, parent=None):
@@ -203,24 +231,10 @@ class MCTS:
         reward = self.cal_reward(node)
         node.update(reward)
 
-        sd = 0
-        print(f'Search Depth: {sd}')
-        print("=" * 5)
-        print('Node State:')
-        print(node.state)
-        print(f'Reward: {reward}')
-
         for _ in range(self.sim_depth):  
             next_node = node.expand()
             node = next_node
             node.update(reward)
-
-            sd += 1
-            print(f'Search Depth: {sd}')
-            print("=" * 5)
-            print('Node State:')
-            print(node.state)
-            print(f'Reward: {reward}')
 
 
     def cal_reward(self, node):
@@ -234,7 +248,6 @@ class MCTS:
         reward = -1 * sum(belief_mat[i][self.player_idx] for i in range(len(belief_mat)) if i != self.player_idx)
         return reward
         
-
         
 def mcts_speaking_strategy(tom_model, player_id, messages):
     history_tokens = parse_sp_actions(messages)
@@ -245,16 +258,7 @@ def mcts_speaking_strategy(tom_model, player_id, messages):
     mcts = MCTS(tom_model, int(player_id), exploration_weight=0.01, search_iterations=10, sim_depth=3)  
     new_state = mcts.search(history_tokens)
 
-    print('Histokens:')
-    print(history_tokens)
-    print('Searched:')
-    print(new_state)
-    pdb.set_trace()
-
-    # TODO: convert new_state into sp_actions
-    
-
-    return sp_actions
+    return new_state
 
 
 class DPIns(AgentCore):
@@ -352,8 +356,8 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 # MCTS
                 sp_actions = mcts_speaking_strategy(self.tom_model, self.role.name[-1], observation["message_history"])
                 if len(sp_actions) > 0:
-                    # TODO
-                    current_belief += '\nTo reduce others\' suspicion of me, I should xxxx.'
+                    sp = sp_actions_2_belief_prompt(sp_actions, self.backend)
+                    current_belief += f'\nTo reduce others\' suspicion of me, I should {sp}.'
                 
                 response = self.backend.query(agent_name=self.name, 
                                               prompts=self._construct_prompts(current_phase=current_phase, 
