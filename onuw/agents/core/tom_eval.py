@@ -55,7 +55,6 @@ id2action = {
 }
 
 
-
 def choosing_speaking_strategy(policy, messages, belief):
     print("Choosing speaking strategy by RL-policy")
     # Construct observation
@@ -113,6 +112,24 @@ def parse_sp_actions(messages):
     return data_item
 
 
+def token_sp_actions(sp_actions):
+    tmp = {}
+    for k in sp_actions.keys():
+        t = []
+        if k == "subject_ids" or k == "object_ids":
+            for i in range(len(sp_actions[k])):
+                t.append(id2player[str(sp_actions[k][i].item())])
+        elif k == "tone_ids" or k == "face_ids":
+            for i in range(len(sp_actions[k])):
+                t.append(id2face[str(sp_actions[k][i].item())])
+        else:
+            for i in range(len(sp_actions[k])):
+                t.append(id2action[str(sp_actions[k][i].item())])
+        tmp[k] = t
+    
+    return tmp
+
+
 def form_action_sentence(obj, action, face, tone, backend):
     hint = "Given the following sentence elements, use all of them to construct a complete short sentence. \
         For example, ```Subject: myself, Object: player 3, Action: point_as_troublemaker, Tone: anger, Expression: happy``` \
@@ -138,7 +155,7 @@ def sp_actions_2_belief_prompt(sp_actions, backend):
                                    backend
                                    )
         prompt += ("\n - " + sen)
-
+    
     return prompt
 
 
@@ -255,9 +272,8 @@ def mcts_speaking_strategy(tom_model, player_id, messages):
     if len(history_tokens['subject_ids']) == 0:
         return sp_actions
 
-    mcts = MCTS(tom_model, int(player_id), exploration_weight=0.01, search_iterations=10, sim_depth=3)  
+    mcts = MCTS(tom_model, int(player_id), exploration_weight=0.7, search_iterations=400, sim_depth=2)  
     new_state = mcts.search(history_tokens)
-
     return new_state
 
 
@@ -358,6 +374,7 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 if len(sp_actions) > 0:
                     sp = sp_actions_2_belief_prompt(sp_actions, self.backend)
                     current_belief += f'\nTo reduce others\' suspicion of me, I should {sp}.'
+                    sp_actions = token_sp_actions(sp_actions)
                 
                 response = self.backend.query(agent_name=self.name, 
                                               prompts=self._construct_prompts(current_phase=current_phase, 
