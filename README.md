@@ -29,7 +29,7 @@ DEFAULT_MODEL = "Qwen2.5-14B-Instruct"
 `configs/werewolf.json`
 
 ### Running Games
-```bash
+```sh
 python main.py --env Werewolf --num_runs <number of runs of different settings> --num_repeats <number of repeating runs in one setting> --random --cli --save_path <save path for game logs>
 ```
 The following options are only enabled when added:
@@ -63,9 +63,26 @@ python test_emo_api.py
 conda create -n osum python=3.10
 conda activate osum
 pip install fastapi uvicorn python-multipart
+git clone https://github.com/ASLP-lab/OSUM
+cd OSUM
 ```
 Follow the instructions in [ASLP-lab/OSUM](https://github.com/ASLP-lab/OSUM) to install dependencies, download the model, and set the path in the config.
+```sh
+cd ..
+conda activate osum
+mv start_osum_api.py OSUM/
+cd OSUM
+python start_osum_api.py
+```
+Run the test
+```sh
+conda activate onuw
+python test_osum_api.py
+```
 
 Edit `configs/werewolf.json`.
 
 Set `structure` in corresponding player's config to `human:mm` or `human:cli`.
+```sh
+python main.py --env Werewolf --num_runs <number of runs of different settings> --num_repeats <number of repeating runs in one setting> --random --cli --save_path <save path for game logs>
+```
