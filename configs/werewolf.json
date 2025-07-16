@@ -16,7 +16,7 @@
                 "temperature": 1.0,
                 "max_tokens": 1000
             },
-            "structure": "dpins:no"
+            "structure": "tom:eval"
         },
         {
             "name": "player2",
@@ -26,7 +26,7 @@
                 "temperature": 1.0,
                 "max_tokens": 1000
             },
-            "structure": "dpins:no"
+            "structure": "tom:eval"
         },
         {
             "name": "player3",
@@ -36,7 +36,7 @@
                 "temperature": 1.0,
                 "max_tokens": 1000
             },
-            "structure": "dpins:no"
+            "structure": "tom:eval"
         },
         {
             "name": "player4",
@@ -46,7 +46,7 @@
                 "temperature": 1.0,
                 "max_tokens": 1000
             },
-            "structure": "dpins:no"
+            "structure": "tom:eval"
         },
         {
             "name": "player5",
@@ -56,7 +56,7 @@
                 "temperature": 1.0,
                 "max_tokens": 1000
             },
-            "structure": "dpins:no"
+            "structure": "tom:eval"
         }
     ]
 }

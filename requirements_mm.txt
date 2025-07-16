@@ -1,0 +1,4 @@
+opencv-python==4.12.0.88
+pyaudio==0.2.14
+moviepy==1.0.3
+soundfile==0.13.1

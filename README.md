@@ -4,6 +4,7 @@
 conda create -n onuw python=3.10
 conda activate onuw
 pip install -r requirements.txt
+pip install -r requirements_mm.txt
 ```
 
 ### Setting APIs
@@ -50,9 +51,9 @@ cd ..
 conda activate llama
 mv start_emo_api.py Emotion-LLaMA/
 cd Emotion-LLaMA
-python start_emo_api.py
+python start_emo_api.py --port 5432
 ```
-Run the test
+Run the test.
 ```sh
 conda activate onuw
 python test_emo_api.py
@@ -72,9 +73,9 @@ cd ..
 conda activate osum
 mv start_osum_api.py OSUM/
 cd OSUM
-python start_osum_api.py
+python start_osum_api.py --port 6543
 ```
-Run the test
+Run the test.
 ```sh
 conda activate onuw
 python test_osum_api.py
@@ -83,6 +84,21 @@ python test_osum_api.py
 Edit `configs/werewolf.json`.
 
 Set `structure` in corresponding player's config to `human:mm` or `human:cli`.
+
+Edit `onuw/mm_utils.py`, Line 11-12:
+```python
+# Emotion-LLaMA
+EMOTION_API_URL = 'http://127.0.0.1:5432/analyze_emotion'
+# OSUM
+TRANSCRIPTION_API_URL = 'http://127.0.0.1:6543/transcribe'
+```
+
+Test API.
+```sh
+python onuw/mm_utils.py
+```
+
+Run the game.
 ```sh
 python main.py --env Werewolf --num_runs <number of runs of different settings> --num_repeats <number of repeating runs in one setting> --random --cli --save_path <save path for game logs>
 ```
