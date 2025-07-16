@@ -15,7 +15,8 @@ AGENT_STRUCT = {
     "dpins:random": DPIns,
     "dpins:llm": DPIns,
     "dpins:rl": DPIns,
-    "human": Human,
+    "human:cli": Human,
+    "human:mm": Human,
     "tom:data": ToM_data,
     "tom:eval": ToM_eval
 }

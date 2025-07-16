@@ -38,6 +38,34 @@ The following options are only enabled when added:
 - `cli`: Launch cli (the interactive interface in the command line)
 
 ### Human Participation
+#### Setting Emotion-LLaMA API
+```sh
+git clone https://github.com/ZebangCheng/Emotion-LLaMA
+cd Emotion-LLaMA
+conda env create -f environment.yml
+```
+Follow the instructions in [ZebangCheng/Emotion-LLaMA](https://github.com/ZebangCheng/Emotion-LLaMA) to install dependencies, download the model, and set the path in the config.
+```sh
+cd ..
+conda activate llama
+mv start_emo_api.py Emotion-LLaMA/
+cd Emotion-LLaMA
+python start_emo_api.py
+```
+Run the test
+```sh
+conda activate onuw
+python test_emo_api.py
+```
+
+#### Setting OSUM API
+```sh
+conda create -n osum python=3.10
+conda activate osum
+pip install fastapi uvicorn python-multipart
+```
+Follow the instructions in [ASLP-lab/OSUM](https://github.com/ASLP-lab/OSUM) to install dependencies, download the model, and set the path in the config.
+
 Edit `configs/werewolf.json`.
 
-Set `structure` in corresponding player's config to `human`.
+Set `structure` in corresponding player's config to `human:mm` or `human:cli`.

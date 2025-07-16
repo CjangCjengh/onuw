@@ -5,12 +5,14 @@ import re
 from .base import AgentCore
 from ..roles import BaseRole
 from ...backends import IntelligenceBackend
+from ...mm_utils import record_and_analyze
 
 
 class Human(AgentCore):
     def __init__(self, role: BaseRole, backend: IntelligenceBackend, global_prompt: str = None, **kwargs):
         super().__init__(role=role, backend=backend, global_prompt=global_prompt, **kwargs)
 
+        self.structure = kwargs.get("structure", "")
         self.console = Console()
     
     def act(self, observation: Dict, players=None, environment=None):
@@ -31,7 +33,10 @@ class Human(AgentCore):
         if "Night" in current_phase:
             response = self.role.get_night_input()
         elif "Day" in current_phase:
-            response = self.role.get_day_input()
+            if self.structure == "human:mm":
+                response = record_and_analyze()
+            else:
+                response = self.role.get_day_input()
         else:
             response = self.role.get_voting_input()
         
