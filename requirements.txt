@@ -11,3 +11,4 @@ tenacity==8.2.2
 tqdm==4.65.0
 openai==0.27.8
 google-generativeai==0.5.4
+gymnasium==0.29.0

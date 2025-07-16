@@ -1,6 +1,8 @@
 ### Installation
 
 ```sh
+conda create -n onuw python=3.10
+conda activate onuw
 pip install -r requirements.txt
 ```
 
