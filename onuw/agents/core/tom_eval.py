@@ -6,9 +6,10 @@ from fuzzywuzzy import process
 import time
 import numpy as np
 import random
-import math
 import re
 import torch
+import math
+from itertools import takewhile
 
 from .base import AgentCore
 from ..roles import BaseRole, SPEAKING_STRATEGY
@@ -16,13 +17,12 @@ from ...backends import IntelligenceBackend
 from ...utils import extract_jsons, get_embeddings
 from ...belief_model import WerewolfBeliefModel, WerewolfBeliefModelConfig
 
-import pdb
-
 # A special signal sent by the player to indicate that it is not possible to continue the conversation, and it requests to end the conversation.
 # It contains a random UUID string to avoid being exploited by any of the players.
 SIGNAL_END_OF_CONVERSATION = f"<<<<<<END_OF_CONVERSATION>>>>>>{uuid.uuid4()}"
 # The maximum number of retries when the query of backend fails
 MAX_RETRIES = 5
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 player_names = ['player1', 'player2', 'player3', 'player4', 'player5']
 player_to_id = {'player1': 0, 'player2': 1, 'player3': 2, 'player4': 3, 'player5': 4}
@@ -39,20 +39,19 @@ action_to_id = {
     'oppose': 7
 }
 
+id_to_player = {v: k for k, v in player_to_id.items()}
+id_to_action = {v: k for k, v in action_to_id.items()}
 
-id2player = {'0': 'player1', '1': 'player2' , '2': 'player3', '3': 'player4', '4': 'player5'}
-id2face = {'0':'sad', '1':'anger', '2':'neutral', '3':'happy', '4':'surprise', '5':'fear', '6':'disgust', '7':'other'}
-id2tone = {'0':'sad', '1':'anger', '2':'neutral', '3':'happy', '4':'surprise', '5':'fear', '6':'disgust', '7':'other'}
-id2action = {
-    '0':'point_as_werewolf',
-    '1':'point_as_villager',
-    '2':'point_as_seer',
-    '3':'point_as_troublemaker',
-    '4':'point_as_robber',
-    '5':'point_as_insomniac',
-    '6':'support',
-    '7':'oppose'
-}
+NUM_PLAYERS = len(player_names)
+NUM_ACTIONS = len(action_to_id)
+NUM_FACES = len(face_to_id)
+NUM_TONES = len(tone_to_id)
+
+MCTS_ITERATIONS = 500
+MAX_ACTION_SEQ_LEN = 3
+UCT_C = 1.414
+
+STOP_ACTION = ("stop",)
 
 
 def choosing_speaking_strategy(policy, messages, belief):
@@ -102,179 +101,167 @@ def parse_sp_actions(messages):
             tone_ids.append(tone_id)
 
     data_item = {
-        'subject_ids': torch.tensor(subject_ids, dtype=torch.long),
-        'action_ids': torch.tensor(action_ids, dtype=torch.long),
-        'object_ids': torch.tensor(object_ids, dtype=torch.long),
-        'face_ids': torch.tensor(face_ids, dtype=torch.long),
-        'tone_ids': torch.tensor(tone_ids, dtype=torch.long)
+        'subject_ids': torch.tensor(subject_ids, dtype=torch.long).unsqueeze(0),
+        'action_ids': torch.tensor(action_ids, dtype=torch.long).unsqueeze(0),
+        'object_ids': torch.tensor(object_ids, dtype=torch.long).unsqueeze(0),
+        'face_ids': torch.tensor(face_ids, dtype=torch.long).unsqueeze(0),
+        'tone_ids': torch.tensor(tone_ids, dtype=torch.long).unsqueeze(0)
     }
 
     return data_item
 
+def calculate_reward(tom_model, tokens, player_id):
+    result = tom_model(**tokens)
+    reward = -torch.sum(result['belief_matrix'][0][-1][:,player_id]).item()
+    return reward
 
-def token_sp_actions(sp_actions):
-    tmp = {}
-    for k in sp_actions.keys():
-        t = []
-        if k == "subject_ids" or k == "object_ids":
-            for i in range(len(sp_actions[k])):
-                t.append(id2player[str(sp_actions[k][i].item())])
-        elif k == "tone_ids" or k == "face_ids":
-            for i in range(len(sp_actions[k])):
-                t.append(id2face[str(sp_actions[k][i].item())])
-        else:
-            for i in range(len(sp_actions[k])):
-                t.append(id2action[str(sp_actions[k][i].item())])
-        tmp[k] = t
-    
-    return tmp
-
-
-def form_action_sentence(obj, action, face, tone, backend):
-    hint = "Given the following sentence elements, use all of them to construct a complete short sentence. \
-        For example, ```Subject: myself, Object: player 3, Action: point_as_troublemaker, Tone: anger, Expression: happy``` \
-        Output: ```I happily pointed at player 3 as the troublemaker, masking my anger.``` \
-        Here are the sentence elements: ```{atoms}```"
-    
-    atoms = f"Subject: myself, Object: {obj}, Action: {action}, Tone: {tone}, Expression: {face}"
-    rqm = hint.format(atoms=atoms)
-
-    return backend.query(agent_name="p", prompts={"system_prompt": "", "user_prompt": ""},
-                  request_msg=rqm)
-    
-
-def sp_actions_2_belief_prompt(sp_actions, backend):
-    assert sp_actions != None
-
-    prompt = ""
-    for i in range(len(sp_actions["subject_ids"])):
-        sen = form_action_sentence(id2player[str(sp_actions["object_ids"][i].item())],
-                                   id2action[str(sp_actions["action_ids"][i].item())],
-                                   id2face[str(sp_actions["face_ids"][i].item())],
-                                   id2tone[str(sp_actions["tone_ids"][i].item())],
-                                   backend
-                                   )
-        prompt += ("\n - " + sen)
-    
-    return prompt
-
-
-class Node:
-    def __init__(self, state, parent=None):
-        self.state = state
+class MCTSNode:
+    """A node in the Monte Carlo Tree Search tree."""
+    def __init__(self, parent=None, action=None):
         self.parent = parent
+        self.action = action
         self.children = []
+        self.Q = 0.0
+        self.N = 0
+        self.untried_actions = None
 
-        self.rewards = -100  
-        self.visits = 1
+    def is_fully_expanded(self):
+        return self.untried_actions is not None and len(self.untried_actions) == 0
 
-    def select_child(self): 
-        assert self.visits > 0
-        ucb = lambda c:(c.rewards / c.visits) + math.sqrt(2*math.log(self.visits) / c.visits) if c.visits > 0 else float('inf')
-        return max(self.children, key=ucb)
+    def select_best_child(self):
+        best_score = -float('inf')
+        best_children = []
+        for child in self.children:
+            exploit_score = child.Q / child.N
+            explore_score = UCT_C * math.sqrt(math.log(self.N) / child.N)
+            uct_score = exploit_score + explore_score
+            
+            if uct_score > best_score:
+                best_score = uct_score
+                best_children = [child]
+            elif uct_score == best_score:
+                best_children.append(child)
+        return random.choice(best_children)
 
-    def expand(self):
-        next_state = self.get_a_legal_state()     
-        child_node = Node(next_state, self)  
+    def expand(self, action):
+        """Expand the tree by creating a new child node."""
+        child_node = MCTSNode(parent=self, action=action)
         self.children.append(child_node)
         return child_node
 
-    def update(self, r): 
-        self.visits += 1
-        self.rewards += r 
-
-        # bachprop visit
-        tmp = self.parent
-        while tmp:
-            tmp.visits += 1
-            tmp = tmp.parent
-
-    def get_a_legal_state(self):
-        new_state = {}
-        for key in self.state.keys():
-            if key == "subject_ids":
-                if self.parent is not None:
-                    ps = self.parent.state[key][-1]
-                else:
-                    ps = self.state[key][-1]
-                ne = torch.tensor([ps], dtype=torch.long)
-            elif key == "object_ids":
-                ne = torch.tensor([random.randrange(0, 5)], dtype=torch.long)
-            else:
-                ne = torch.tensor([random.randrange(0, 8)], dtype=torch.long)
-            new_state[key] = torch.cat((self.state[key], ne))
-        return new_state
+    def update(self, reward):
+        """Backpropagate the simulation reward up the tree."""
+        self.N += 1
+        self.Q += reward
+        if self.parent:
+            self.parent.update(reward)
 
 
-class MCTS:
-    def __init__(self, 
-                 tom_model, 
-                 player_id, 
-                 exploration_weight=0.9, 
-                 search_iterations=500,
-                 sim_depth=3,
-                 ):
-        self.exploration_weight = exploration_weight 
-        self.search_iterations = search_iterations
-        self.sim_depth = sim_depth
-        
-        self.tom_model = tom_model
-        self.player_idx = player_id - 1
-        assert self.player_idx >= 0 and self.player_idx < self.tom_model.config.num_players
-        
-
-    def search(self, initial_state):
-        root = Node(initial_state)
-
-        for _ in range(self.search_iterations):
-            node = root
-            tmp = random.random()
-            if tmp >= self.exploration_weight and root.children != []:  
-                node = node.select_child()
-
-            self.simulate(node)
-        
-        best_ch = max(root.children, key=lambda c: c.rewards)
-        tmp = best_ch
-        while tmp.children != []:
-            tmp = max(tmp.children, key=lambda c: c.rewards)
-            if tmp.rewards > best_ch.rewards:
-                best_ch = tmp
-                
-        return best_ch.state
-
-
-    def simulate(self, node):  # simulate and backprob
-        reward = self.cal_reward(node)
-        node.update(reward)
-
-        for _ in range(self.sim_depth):  
-            next_node = node.expand()
-            node = next_node
-            node.update(reward)
-
-
-    def cal_reward(self, node):
-        resu = self.tom_model(subject_ids=node.state["subject_ids"].unsqueeze(0),  
-                        action_ids=node.state["action_ids"].unsqueeze(0),
-                        object_ids=node.state["object_ids"].unsqueeze(0),  
-                        tone_ids=node.state["tone_ids"].unsqueeze(0),
-                        face_ids=node.state["face_ids"].unsqueeze(0),
-                        )
-        belief_mat = resu["belief_matrix"][0, -1, :, :] 
-        reward = -1 * sum(belief_mat[i][self.player_idx] for i in range(len(belief_mat)) if i != self.player_idx)
-        return reward
-        
-        
-def mcts_speaking_strategy(tom_model, player_id, messages):
+def mcts_speaking_strategy(tom_model, messages):
     history_tokens = parse_sp_actions(messages)
     sp_actions = []
-    if len(history_tokens['subject_ids']) == 0:
+    if len(history_tokens['subject_ids'][0]) == 0:
         return sp_actions
+    history_tokens = {k: v.to(DEVICE) for k, v in history_tokens.items()}
+    current_subject_id = (history_tokens['subject_ids'][0][-1].item() + 1) % 5
+    root = MCTSNode()
+    
+    best_reward_so_far = -float('inf')
+    best_sequence_so_far = None
 
-    mcts = MCTS(tom_model, int(player_id), exploration_weight=0.7, search_iterations=400, sim_depth=2)  
-    new_state = mcts.search(history_tokens)
-    return new_state
+    for _ in range(MCTS_ITERATIONS):
+        node = root
+        
+        # 1. Selection Phase
+        while node.is_fully_expanded() and node.children:
+            node = node.select_best_child()
+            
+        # 2. Expansion Phase
+        if node.untried_actions is None:
+            path_to_node = []
+            curr = node
+            while curr.parent:
+                path_to_node.insert(0, curr.action)
+                curr = curr.parent
+            
+            num_actions_in_path = len(path_to_node) - 1 if path_to_node else 0
+
+            if not path_to_node: # Root node -> emotion choices
+                node.untried_actions = [(f, t) for f in range(NUM_FACES) for t in range(NUM_TONES)]
+
+            elif num_actions_in_path < MAX_ACTION_SEQ_LEN:
+                node.untried_actions = [STOP_ACTION]
+                for action_id in range(NUM_ACTIONS):
+                    for object_id in range(NUM_PLAYERS):
+                        if action_id <= 5 and object_id == current_subject_id:
+                            continue
+                        node.untried_actions.append((action_id, object_id))
+            else:
+                 node.untried_actions = []
+            random.shuffle(node.untried_actions)
+
+        if node.untried_actions:
+            action_to_expand = node.untried_actions.pop()
+            node = node.expand(action_to_expand)
+
+        # 3. Simulation Phase
+        path_for_simulation = []
+        temp_node = node
+        while temp_node.parent:
+            path_for_simulation.insert(0, temp_node.action)
+            temp_node = temp_node.parent
+
+        sim_emotion, sim_actions = path_for_simulation[0], path_for_simulation[1:]
+
+        is_terminal = (node.action == STOP_ACTION) or (len(sim_actions) >= MAX_ACTION_SEQ_LEN)
+
+        if not is_terminal:
+            while len(sim_actions) < MAX_ACTION_SEQ_LEN:
+                possible_sim_actions = [STOP_ACTION]
+                for action_id in range(NUM_ACTIONS):
+                    for object_id in range(NUM_PLAYERS):
+                        possible_sim_actions.append((action_id, object_id))
+                
+                chosen_action = random.choice(possible_sim_actions)
+                if chosen_action == STOP_ACTION:
+                    break
+                sim_actions.append(chosen_action)
+            
+        # 4. Reward Calculation & Backpropagation Phase
+        final_tokens = {k: v.clone() for k, v in history_tokens.items()}
+        sim_actions = list(takewhile(lambda x: x[0] != 'stop', sim_actions))
+        num_new_actions = len(sim_actions)
+
+        if num_new_actions > 0:
+            sim_face_id, sim_tone_id = sim_emotion
+            new_subject_ids = torch.full((1, num_new_actions), current_subject_id, dtype=torch.long, device=DEVICE)
+            new_face_ids = torch.full((1, num_new_actions), sim_face_id, dtype=torch.long, device=DEVICE)
+            new_tone_ids = torch.full((1, num_new_actions), sim_tone_id, dtype=torch.long, device=DEVICE)
+            new_action_ids = torch.tensor([[a[0] for a in sim_actions]], dtype=torch.long, device=DEVICE)
+            new_object_ids = torch.tensor([[a[1] for a in sim_actions]], dtype=torch.long, device=DEVICE)
+            
+            final_tokens['subject_ids'] = torch.cat((final_tokens['subject_ids'], new_subject_ids), dim=1)
+            final_tokens['action_ids'] = torch.cat((final_tokens['action_ids'], new_action_ids), dim=1)
+            final_tokens['object_ids'] = torch.cat((final_tokens['object_ids'], new_object_ids), dim=1)
+            final_tokens['face_ids'] = torch.cat((final_tokens['face_ids'], new_face_ids), dim=1)
+            final_tokens['tone_ids'] = torch.cat((final_tokens['tone_ids'], new_tone_ids), dim=1)
+
+        reward = calculate_reward(tom_model, final_tokens, current_subject_id)
+        print(f'Reward: {reward}')
+        
+        # Backpropagate the reward
+        node.update(reward)
+
+        if reward > best_reward_so_far:
+            best_reward_so_far = reward
+            best_sequence_so_far = sim_actions
+
+    if best_sequence_so_far:
+        for action_id, object_id in best_sequence_so_far:
+            action_name = id_to_action[action_id]
+            object_name = id_to_player[object_id]
+            sp_actions.append((action_name, object_name))
+    return sp_actions
 
 
 class DPIns(AgentCore):
@@ -285,7 +272,7 @@ class DPIns(AgentCore):
         super().__init__(role=role, backend=backend, global_prompt=global_prompt, **kwargs)
         
         self.structure = kwargs.get("structure", "")
-        self.tom_model = WerewolfBeliefModel.from_pretrained("onuw/agents/models/belief_model")
+        self.tom_model = WerewolfBeliefModel.from_pretrained("onuw/agents/models/belief_model").to(DEVICE)
     
     def _construct_prompts(self, current_phase, history_messages, **kwargs):
         # Merge the role description and the global prompt as the system prompt for the agent
@@ -370,11 +357,9 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                         action_prompt = self.role.get_voting_prompt()
 
                 # MCTS
-                sp_actions = mcts_speaking_strategy(self.tom_model, self.role.name[-1], observation["message_history"])
+                sp_actions = mcts_speaking_strategy(self.tom_model, observation["message_history"])
                 if len(sp_actions) > 0:
-                    sp = sp_actions_2_belief_prompt(sp_actions, self.backend)
-                    current_belief += f'\nTo reduce others\' suspicion of me, I should {sp}.'
-                    sp_actions = token_sp_actions(sp_actions)
+                    current_belief += '\nTo reduce others\' suspicion of me, I should:\n' + '\n'.join([f'{action_name} -> {object_name}' for action_name, object_name in sp_actions])
                 
                 response = self.backend.query(agent_name=self.name, 
                                               prompts=self._construct_prompts(current_phase=current_phase, 
