@@ -374,7 +374,11 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 action = action_list[0]
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
-                action["sp_actions"] = [(self.name, action_name, object_name) for action_name, object_name in sp_actions]
+                if 'speech' in action:
+                    response = self.backend.query(agent_name=self.name, 
+                                              prompts=self.role.get_parse_prompt(action["speech"]))
+                    sp_actions = re.findall(r'(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)', response)
+                    action["sp_actions"] = sp_actions
 
                 break  # if success, break the loop
             
