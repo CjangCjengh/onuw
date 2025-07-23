@@ -374,7 +374,7 @@ Based on the game rules, role descriptions, messages and your belief, think abou
                 action = action_list[0]
                 action["belief"] = current_belief
                 action["strategy"] = chosen_strategy
-                action["sp_actions"] = sp_actions
+                action["sp_actions"] = [(self.name, action_name, object_name) for action_name, object_name in sp_actions]
 
                 break  # if success, break the loop
             
